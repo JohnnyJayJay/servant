@@ -1,48 +1,58 @@
 (ns servant.handler
-  (:import (java.nio.file Files Paths Path))
-  (:require [ring.middleware.file :refer [wrap-file]]
-            [ring.middleware.content-type :refer [wrap-content-type]]
-            [ring.middleware.not-modified :refer [wrap-not-modified]]
+  (:import (java.nio.file Files Paths Path LinkOption)
+           (java.io File))
+  (:require [ring.middleware.defaults :refer [wrap-defaults site-defaults]]
             [ring.middleware.basic-authentication :refer [wrap-basic-authentication]]
-            [ring.util.response :refer [file-response not-found]]
+            [ring.util.response :as response]
+            [ring.util.codec :as codec]
             [hiccup.core :refer [html]]
-            [clojure.java.io :refer [file]]
-            [clojure.string :refer [last-index-of]]
-            [clojure.edn :as edn]))
+            [clojure.edn :as edn]
+            [clojure.string :as string]))
 
-(def config (edn/read-string "config.edn"))
+(def opts (make-array LinkOption 0))
+
+(def config (edn/read-string (slurp "config.edn")))
 
 (defn authenticated? [name pass]
   (and (= name (:user config))
        (= pass (:password config))))
 
-(defn path->link [^Path path]
-  [:a 
-   {:href (str \/ (.relativize root path))} 
-   (cond-> (.getFileName path)
-           (Files/isDirectory path) (str "/"))])
+(defn path->link [^Path root ^Path path]
+  (println "link" path)
+  (let [full-path (.resolve root path)]
+    [:a
+     {:href (str \/ (string/replace (.toString path) File/separator "/"))}
+     (cond-> (.getFileName path)
+             (and (not= root full-path) (Files/isDirectory full-path opts)) (str "/"))])) 
 
 (defn element->list-entry [element]
   [:li element])
 
+(def more (make-array String 0))
+
 (defn handler [{:keys [uri]}]
-  (let [root (Paths/get (:root config))
-        destination (.resolve root uri)]
+  (let [root (Paths/get (:root config) more)
+        destination (.resolve root (codec/url-decode (subs uri 1)))
+        path->link (partial path->link root)]
     (cond 
-      (Files/notExists destination)) (not-found "404 Not Found")
-      (Files/isRegularFile destination) (file-response (str destination) {:index-files? false})
-      :else (html 
-              [:h1 "Elements in " [:a {:href "/"} "/"] (map path->link destination)] 
-              [:a {:href "/"} "root"]
-              [:a {:href ".."} ".."]
-              [:ul 
-               (->> (Files/list destination) 
-                    (.toArray)
-                    (sort-by (juxt #(Files/isRegularFile ^Path %) #(.getFileName ^Path %))) 
-                    (map path->link)
-                    (map element->list-entry))])))
+      (Files/notExists destination opts) (response/not-found "404 Not Found")
+      (Files/isRegularFile destination opts) (response/file-response (.toString destination) {:index-files? false})
+      :else (-> (response/response 
+                  (html 
+                    [:h1 "Elements in " [:a {:href "/"} "/"] (map path->link (.relativize root destination))] 
+                    [:a {:href "/"} "root"] 
+                    [:br]
+                    [:a {:href ".."} ".."]
+                    [:ul 
+                     (->> (Files/list destination) 
+                          (.toArray)
+                          (map #(.relativize root ^Path %))
+                          (sort-by (juxt #(Files/isRegularFile ^Path % opts) #(.getFileName ^Path %))) 
+                          (map path->link)
+                          (map element->list-entry))]))
+                (response/content-type "text/html")))))
 
 (def app (-> handler
-             (wrap-content-type) 
-             (wrap-not-modified) 
+             (wrap-defaults site-defaults)
              (wrap-basic-authentication authenticated?)))
+             
