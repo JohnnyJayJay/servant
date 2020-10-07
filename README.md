@@ -4,7 +4,7 @@ Super simple HTTP file server/browser with basic authentication.
 
 ## Prerequisites
 
-You will need [Leiningen][https://leiningen.org] 2.0.0 or above installed.
+You will need [Leiningen](https://leiningen.org) 2.0.0 or above installed.
 
 ## Configuration
 
