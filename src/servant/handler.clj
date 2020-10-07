@@ -18,7 +18,6 @@
        (= pass (:password config))))
 
 (defn path->link [^Path root ^Path path]
-  (println "link" path)
   (let [full-path (.resolve root path)]
     [:a
      {:href (str \/ (string/replace (.toString path) File/separator "/"))}
