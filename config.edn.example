@@ -1,0 +1,3 @@
+{:user "johnny"
+ :password "supersecurepw"
+ :root "/var/www"}
